@@ -92,6 +92,8 @@ jobs:
           retention-days: 7
 
   # ── Job 3: Test de la app integrada (devops-tp12) ──────
+  # Prueba el código integrado que despliega devops-tp12/scripts/deploy.sh.
+  # Las imágenes se construyen para validarlas, pero no se publican.
   test-integrated-app:
     name: Test App Integrada (devops-tp12)
     runs-on: ubuntu-latest
@@ -126,11 +128,12 @@ jobs:
           docker build -t notes-frontend:ci-check devops-tp12/app/frontend
 
   # ── Job 4: Build y Push ────────────────────────────────
+  # Conserva la publicación del backend heredado en main y develop.
   build-push:
     name: Build y Push imagen
     runs-on: ubuntu-latest
     needs: test
-    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') && secrets.DOCKERHUB_USERNAME != ''
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
 
     outputs:
       image-tag: ${{ steps.meta.outputs.tags }}
@@ -140,22 +143,25 @@ jobs:
       - name: Checkout código
         uses: actions/checkout@v4
 
+      # Genera tags automáticos: latest, sha-abc123, v1.0 si hay tag
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ secrets.DOCKERHUB_USERNAME }}/devops-portfolio
+          images: ${{ secrets.DOCKERHUB_USERNAME || 'usuario-placeholder' }}/devops-portfolio
           tags: |
             type=ref,event=branch
             type=sha,prefix=sha-,format=short
             type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
 
       - name: Login a Docker Hub
+        if: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      # buildx permite builds multi-plataforma (linux/amd64 + linux/arm64)
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -165,7 +171,7 @@ jobs:
         with:
           context: ./devops-TP06/backend
           target: final
-          push: true
+          push: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
